@@ -1,0 +1,93 @@
+name: Check upstream updates
+
+on:
+  schedule:
+    # 10:17 every day in Hong Kong (02:17 UTC).
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the fork
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/Yu9191/wloc.git
+          git fetch upstream main
+
+      - name: Prepare sync branch
+        id: prepare
+        shell: bash
+        run: |
+          if git merge-base --is-ancestor upstream/main origin/main; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "The fork already contains the latest upstream commit."
+            exit 0
+          fi
+
+          git switch --force-create sync/upstream-main origin/main
+          git merge --no-edit upstream/main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.prepare.outputs.changed == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies and test
+        if: steps.prepare.outputs.changed == 'true'
+        working-directory: worker
+        run: |
+          npm ci
+          npm test
+
+      - name: Push sync branch
+        if: steps.prepare.outputs.changed == 'true'
+        run: git push --force-with-lease origin sync/upstream-main
+
+      - name: Create or update pull request
+        if: steps.prepare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          title="chore: sync upstream Yu9191/wloc"
+          body=$(cat <<'EOF'
+          This pull request was created automatically after detecting changes in `Yu9191/wloc`.
+
+          The upstream changes were merged into `sync/upstream-main`, and the worker test suite passed before this PR was created or updated.
+
+          Review the changes and merge this PR to update the fork. The existing Pages deployment workflow will deploy worker changes after the merge.
+          EOF
+          )
+
+          if gh pr view sync/upstream-main --json number >/dev/null 2>&1; then
+            gh pr edit sync/upstream-main --title "$title" --body "$body"
+          else
+            gh pr create \
+              --base main \
+              --head sync/upstream-main \
+              --title "$title" \
+              --body "$body"
+          fi
