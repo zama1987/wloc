@@ -82,8 +82,15 @@ jobs:
           EOF
           )
 
-          if gh pr view sync/upstream-main --json number >/dev/null 2>&1; then
-            gh pr edit sync/upstream-main --title "$title" --body "$body"
+          pr_number=$(gh pr list \
+            --base main \
+            --head sync/upstream-main \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" --title "$title" --body "$body"
           else
             gh pr create \
               --base main \
