@@ -82,19 +82,23 @@ jobs:
           EOF
           )
 
-          pr_number=$(gh pr list \
-            --base main \
-            --head sync/upstream-main \
-            --state open \
-            --json number \
+          pr_number=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&head=${GITHUB_REPOSITORY_OWNER}:sync/upstream-main" \
             --jq '.[0].number')
 
           if [ -n "$pr_number" ]; then
-            gh pr edit "$pr_number" --title "$title" --body "$body"
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
+              --method PATCH \
+              -f title="$title" \
+              -f body="$body" >/dev/null
           else
-            gh pr create \
-              --base main \
-              --head sync/upstream-main \
-              --title "$title" \
-              --body "$body"
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/pulls" \
+              --method POST \
+              -f base=main \
+              -f head=sync/upstream-main \
+              -f title="$title" \
+              -f body="$body" \
+              --jq '.html_url'
           fi
