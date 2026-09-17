@@ -29,11 +29,31 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch upstream
+        id: upstream
+        shell: bash
         run: |
           git remote add upstream https://github.com/Yu9191/wloc.git
-          git fetch upstream main
+          if git fetch upstream main; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Upstream Yu9191/wloc is currently unavailable. The fork and Pages deployment are unchanged."
+          fi
+
+      - name: Report unavailable upstream
+        if: steps.upstream.outputs.available != 'true'
+        shell: bash
+        run: |
+          {
+            echo "## Upstream unavailable"
+            echo
+            echo 'The repository `Yu9191/wloc` could not be fetched.'
+            echo "No files, branches, pull requests, or Pages deployments were changed."
+            echo "A future scheduled run will try again automatically."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare sync branch
+        if: steps.upstream.outputs.available == 'true'
         id: prepare
         shell: bash
         run: |
